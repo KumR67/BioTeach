@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Advanced Records Search – Biographical Dictionary</title>
+
+<style>
+body {
+    font-family: Arial, sans-serif;
+    margin: 20px;
+    line-height: 1.6;
+}
+
+#search {
+    width: 320px;
+    padding: 8px;
+}
+
+button {
+    padding: 8px 15px;
+    margin-left: 5px;
+    border: none;
+    cursor: pointer;
+    color: white;
+    background: #4CAF50;
+}
+
+button:hover { background: #45a049; }
+
+.print-btn { background: #666; }
+.print-btn:hover { background: #555; }
+
+#rubriques-container {
+    margin: 10px 0;
+    max-height: 150px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    padding: 10px;
+    display: inline-block;
+}
+
+.rubrique-checkbox {
+    min-width: 150px;
+    display: inline-block;
+}
+
+#results-count {
+    margin-top: 20px;
+    font-weight: bold;
+}
+
+#results-layout {
+    display: flex;
+    gap: 20px;
+    margin-top: 10px;
+}
+
+#sources-column {
+    width: 260px;
+    border-right: 1px solid #ddd;
+    padding-right: 10px;
+}
+
+#records-column {
+    flex: 1;
+}
+
+.source-item {
+    cursor: pointer;
+    color: #0066cc;
+    margin-bottom: 6px;
+}
+
+.result {
+    border: 1px solid #ddd;
+    padding: 10px;
+    margin-bottom: 20px;
+    border-radius: 5px;
+    background: #f9f9f9;
+}
+
+.source {
+    font-weight: bold;
+    color: #0066cc;
+    cursor: pointer;
+    margin-bottom: 6px;
+}
+
+.match { background: yellow; }
+
+/* button back to top */
+#backToTop {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: rgba(0,102,204,0.6);
+    color: white;
+    border-radius: 30px;
+    padding: 10px 14px;
+    display: none;
+    cursor: pointer;
+}
+
+/* ===== print / PDF ===== */
+@media print {
+    #search, #rubriques-container, #sources-column,
+    button, #backToTop {
+        display: none !important;
+    }
+
+    body {
+        margin: 2cm;
+        font-size: 11pt;
+    }
+
+    .result {
+        border: none;
+        page-break-inside: avoid;
+    }
+
+    .match {
+        background: none;
+        font-weight: bold;
+    }
+
+    footer {
+        position: fixed;
+        bottom: 1cm;
+        width: 100%;
+        text-align: center;
+        font-size: 9pt;
+        color: #555;
+    }
+
+    h1 { margin-bottom: 5px; }
+    #results-count { margin-top:0; margin-bottom:10px; }
+    #results-layout { margin-top:0; }
+}
+</style>
+</head>
+
+<body>
+
+<h1>Advanced Records Search</h1>
+
+<div>
+    <input id="search" placeholder='Ex: Greek Slavic School  archiv*  "exact phrase"'>
+    <button onclick="performSearch()">Search</button>
+    <button class="print-btn" onclick="window.print()">Export to PDF</button>
+</div>
+
+<div id="rubriques-container">
+    <strong>Category Filters</strong><br>
+    <button onclick="checkAllRubriques()">Check All</button>
+    <button onclick="uncheckAllRubriques()">Uncheck All</button>
+</div>
+
+<div id="results-count"></div>
+
+<div id="results-layout">
+    <div id="sources-column"></div>
+    <div id="records-column"></div>
+</div>
+
+<button id="backToTop">↑ Top</button>
+<footer id="print-footer"></footer>
+
+<script>
+let data = [];
+let rubriques = new Set();
+
+const jsonUrl =
+'https://gist.githubusercontent.com/KumR67/a8bbd548b913c17787941e9389a3cd4d/raw/33743b554f27437538b49e14e97cf1d51d069f02/tous_les_enregistrements_total_italique.json';
+fetch(jsonUrl)
+.then(r => r.json())
+.then(json => {
+    data = json;
+    data.forEach(item => {
+        Object.keys(item).forEach(k => {
+            if (k !== 'source') rubriques.add(k);
+        });
+    });
+
+    const c = document.getElementById('rubriques-container');
+    rubriques.forEach(r => {
+        const d = document.createElement('div');
+        d.className = 'rubrique-checkbox';
+        d.innerHTML =
+            `<input type="checkbox" class="rubrique-check" id="rubrique-${r}" checked>
+             <label for="rubrique-${r}">${r}</label>`;
+        c.appendChild(d);
+    });
+});
+
+function getSelectedRubriques() {
+    return [...rubriques].filter(r =>
+        document.getElementById(`rubrique-${r}`)?.checked
+    );
+}
+
+function checkAllRubriques() {
+    document.querySelectorAll('.rubrique-check').forEach(cb => cb.checked = true);
+}
+
+function uncheckAllRubriques() {
+    document.querySelectorAll('.rubrique-check').forEach(cb => cb.checked = false);
+}
+
+function parseQuery(raw) {
+    const q = raw.trim();
+    if (!q) return { exact: '', terms: [] };
+
+    const exact = q.match(/^"(.*)"$/);
+    if (exact) return { exact: exact[1].toLowerCase(), terms: [] };
+
+    return {
+        exact: '',
+        terms: q.toLowerCase().split(/\s+/).map(t => {
+            const c = t.replace(/\*/g,'');
+            let r;
+            if (t.startsWith('*') && t.endsWith('*')) r = new RegExp(c,'i');
+            else if (t.startsWith('*')) r = new RegExp(c+'\\b','i');
+            else if (t.endsWith('*')) r = new RegExp('\\b'+c,'i');
+            else r = new RegExp(c,'i');
+            return r;
+        })
+    };
+}
+
+function performSearch() {
+    const { exact, terms } = parseQuery(search.value);
+    const selected = getSelectedRubriques();
+
+    const srcCol = document.getElementById('sources-column');
+    const recCol = document.getElementById('records-column');
+    const resultsCount = document.getElementById('results-count');
+
+    srcCol.innerHTML = '';
+    recCol.innerHTML = '';
+
+    const results = data.filter(item =>
+        Object.entries(item).some(([k,v]) => {
+            if (k === 'source') return false;
+            if (selected.length && !selected.includes(k)) return false;
+            const t = String(v).toLowerCase();
+            if (exact) return t.includes(exact);
+            if (terms.length) return terms.every(r => r.test(t));
+            return true;
+        })
+    );
+
+    resultsCount.textContent = `${results.length} record(s) found`;
+
+    results.forEach((item,i) => {
+
+        const src = document.createElement('div');
+        src.className = 'source-item';
+        src.textContent = item.source;
+        src.onclick = () =>
+            document.getElementById(`rec-${i}`)
+                .scrollIntoView({behavior:'smooth'});
+        srcCol.appendChild(src);
+
+        const d = document.createElement('div');
+        d.className = 'result';
+        d.id = `rec-${i}`;
+
+        const title = document.createElement('div');
+        title.className = 'source';
+        title.textContent = item.source;
+        title.onclick = () => openSource(item);
+        d.appendChild(title);
+
+        Object.keys(item).forEach(f => {
+            if (f !== 'source') {
+                const line = document.createElement('div');
+                line.innerHTML =
+                    `<strong>${f} :</strong> ` +
+                    highlight(
+                        String(item[f]).replace(/\n/g,'<br>'),
+                        exact, terms
+                    );
+                d.appendChild(line);
+            }
+        });
+
+        recCol.appendChild(d);
+    });
+
+    updateFooter();
+}
+
+function highlight(text, exact, terms) {
+    let r = text;
+    if (exact) {
+        return r.replace(new RegExp(exact,'gi'), m => `<span class="match">${m}</span>`);
+    }
+    terms.forEach(t => r = r.replace(t, m => `<span class="match">${m}</span>`));
+    return r;
+}
+
+function openSource(item) {
+    const w = window.open('', '_blank');
+    w.document.write(`<pre>${JSON.stringify(item,null,2)}</pre>`);
+    w.document.close();
+}
+
+document.getElementById('search').addEventListener('keydown', function(event) {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        performSearch();
+    }
+});
+
+window.addEventListener('scroll', () => {
+    backToTop.style.display = window.scrollY > 300 ? 'block' : 'none';
+});
+backToTop.onclick = () => window.scrollTo({top:0, behavior:'smooth'});
+
+function updateFooter() {
+    const d = new Date();
+    printFooter.textContent =
+        `Biographical Dictionary. Online search results as of ${
+            String(d.getDate()).padStart(2,'0')}/${
+            String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()
+        }`;
+}
+</script>
+
+</body>
+</html>
