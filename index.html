@@ -4,140 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Advanced Records Search – Biographical Dictionary</title>
-
-<style>
-body {
-    font-family: Arial, sans-serif;
-    margin: 20px;
-    line-height: 1.6;
-}
-
-#search {
-    width: 320px;
-    padding: 8px;
-}
-
-button {
-    padding: 8px 15px;
-    margin-left: 5px;
-    border: none;
-    cursor: pointer;
-    color: white;
-    background: #4CAF50;
-}
-
-button:hover { background: #45a049; }
-
-.print-btn { background: #666; }
-.print-btn:hover { background: #555; }
-
-#rubriques-container {
-    margin: 10px 0;
-    max-height: 150px;
-    overflow-y: auto;
-    border: 1px solid #ddd;
-    padding: 10px;
-    display: inline-block;
-}
-
-.rubrique-checkbox {
-    min-width: 150px;
-    display: inline-block;
-}
-
-#results-count {
-    margin-top: 20px;
-    font-weight: bold;
-}
-
-#results-layout {
-    display: flex;
-    gap: 20px;
-    margin-top: 10px;
-}
-
-#sources-column {
-    width: 260px;
-    border-right: 1px solid #ddd;
-    padding-right: 10px;
-}
-
-#records-column {
-    flex: 1;
-}
-
-.source-item {
-    cursor: pointer;
-    color: #0066cc;
-    margin-bottom: 6px;
-}
-
-.result {
-    border: 1px solid #ddd;
-    padding: 10px;
-    margin-bottom: 20px;
-    border-radius: 5px;
-    background: #f9f9f9;
-}
-
-.source {
-    font-weight: bold;
-    color: #0066cc;
-    cursor: pointer;
-    margin-bottom: 6px;
-}
-
-.match { background: yellow; }
-
-/* button back to top */
-#backToTop {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    background: rgba(0,102,204,0.6);
-    color: white;
-    border-radius: 30px;
-    padding: 10px 14px;
-    display: none;
-    cursor: pointer;
-}
-
-/* ===== print / PDF ===== */
-@media print {
-    #search, #rubriques-container, #sources-column,
-    button, #backToTop {
-        display: none !important;
-    }
-
-    body {
-        margin: 2cm;
-        font-size: 11pt;
-    }
-
-    .result {
-        border: none;
-        page-break-inside: avoid;
-    }
-
-    .match {
-        background: none;
-        font-weight: bold;
-    }
-
-    footer {
-        position: fixed;
-        bottom: 1cm;
-        width: 100%;
-        text-align: center;
-        font-size: 9pt;
-        color: #555;
-    }
-
-    h1 { margin-bottom: 5px; }
-    #results-count { margin-top:0; margin-bottom:10px; }
-    #results-layout { margin-top:0; }
-}
-</style>
+<link rel="stylesheet" href="layout.css">
+<link rel="stylesheet" href="dico_tionok.css">
 </head>
 
 <body>
@@ -164,21 +32,24 @@ button:hover { background: #45a049; }
 </div>
 
 <button id="backToTop">↑ Top</button>
-<footer id="print-footer"></footer>
 
 <script>
 let data = [];
 let rubriques = new Set();
 
+const searchInput = document.getElementById('search');
+const backToTop = document.getElementById('backToTop');
+
 const jsonUrl =
 'https://gist.githubusercontent.com/KumR67/a8bbd548b913c17787941e9389a3cd4d/raw/33743b554f27437538b49e14e97cf1d51d069f02/tous_les_enregistrements_total_italique.json';
+
 fetch(jsonUrl)
 .then(r => r.json())
 .then(json => {
     data = json;
     data.forEach(item => {
         Object.keys(item).forEach(k => {
-            if (k !== 'source') rubriques.add(k);
+            if (k !== 'source' && k !== 'file') rubriques.add(k);
         });
     });
 
@@ -192,6 +63,7 @@ fetch(jsonUrl)
         c.appendChild(d);
     });
 });
+
 
 function getSelectedRubriques() {
     return [...rubriques].filter(r =>
@@ -229,7 +101,7 @@ function parseQuery(raw) {
 }
 
 function performSearch() {
-    const { exact, terms } = parseQuery(search.value);
+    const { exact, terms } = parseQuery(searchInput.value);
     const selected = getSelectedRubriques();
 
     const srcCol = document.getElementById('sources-column');
@@ -241,7 +113,7 @@ function performSearch() {
 
     const results = data.filter(item =>
         Object.entries(item).some(([k,v]) => {
-            if (k === 'source') return false;
+            if (k === 'source' || k === 'file') return false;
             if (selected.length && !selected.includes(k)) return false;
             const t = String(v).toLowerCase();
             if (exact) return t.includes(exact);
@@ -253,15 +125,14 @@ function performSearch() {
     resultsCount.textContent = `${results.length} record(s) found`;
 
     results.forEach((item,i) => {
-
+        // Sources column
         const src = document.createElement('div');
         src.className = 'source-item';
         src.textContent = item.source;
-        src.onclick = () =>
-            document.getElementById(`rec-${i}`)
-                .scrollIntoView({behavior:'smooth'});
+        src.onclick = () => document.getElementById(`rec-${i}`).scrollIntoView({behavior:'smooth'});
         srcCol.appendChild(src);
 
+        // Records column
         const d = document.createElement('div');
         d.className = 'result';
         d.id = `rec-${i}`;
@@ -276,11 +147,7 @@ function performSearch() {
             if (f !== 'source') {
                 const line = document.createElement('div');
                 line.innerHTML =
-                    `<strong>${f} :</strong> ` +
-                    highlight(
-                        String(item[f]).replace(/\n/g,'<br>'),
-                        exact, terms
-                    );
+                    `<strong>${f} :</strong> ` + highlight(String(item[f]).replace(/\n/g,'<br>'), exact, terms);
                 d.appendChild(line);
             }
         });
@@ -288,7 +155,12 @@ function performSearch() {
         recCol.appendChild(d);
     });
 
-    updateFooter();
+    // Footer at the bottom of results
+    const footerDiv = document.createElement('div');
+    footerDiv.className = 'result-footer';
+    const d = new Date();
+    footerDiv.textContent = `Biographical Dictionary. Online search results as of ${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+    recCol.appendChild(footerDiv);
 }
 
 function highlight(text, exact, terms) {
@@ -306,7 +178,7 @@ function openSource(item) {
     w.document.close();
 }
 
-document.getElementById('search').addEventListener('keydown', function(event) {
+searchInput.addEventListener('keydown', function(event) {
     if (event.key === 'Enter') {
         event.preventDefault();
         performSearch();
@@ -317,15 +189,6 @@ window.addEventListener('scroll', () => {
     backToTop.style.display = window.scrollY > 300 ? 'block' : 'none';
 });
 backToTop.onclick = () => window.scrollTo({top:0, behavior:'smooth'});
-
-function updateFooter() {
-    const d = new Date();
-    printFooter.textContent =
-        `Biographical Dictionary. Online search results as of ${
-            String(d.getDate()).padStart(2,'0')}/${
-            String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()
-        }`;
-}
 </script>
 
 </body>
