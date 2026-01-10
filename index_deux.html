@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Advanced Records Search – Biographical Dictionary</title>
+<link rel="stylesheet" href="layout.css">
+<link rel="stylesheet" href="dico_tionok.css">
+</head>
+
+<body>
+
+<h1>Advanced Records Search</h1>
+
+<div>
+    <input id="search" placeholder='Ex: Greek Slavic School  archiv*  "exact phrase"'>
+    <button onclick="performSearch()">Search</button>
+    <button class="print-btn" onclick="window.print()">Export to PDF</button>
+</div>
+
+<div id="rubriques-container">
+    <strong>Category Filters</strong><br>
+    <button onclick="checkAllRubriques()">Check All</button>
+    <button onclick="uncheckAllRubriques()">Uncheck All</button>
+</div>
+
+<div id="results-count"></div>
+
+<div id="results-layout">
+    <div id="sources-column"></div>
+    <div id="records-column"></div>
+</div>
+
+<button id="backToTop">↑ Top</button>
+
+<script>
+let data = [];
+let rubriques = new Set();
+
+const searchInput = document.getElementById('search');
+const backToTop = document.getElementById('backToTop');
+
+const jsonUrl =
+'https://gist.githubusercontent.com/KumR67/6456692b3dc299dcabb94ee997e1ad08/raw/b9628728598fff14e8878b147d5e0755353a191c/DeuxNotices.json'
+fetch(jsonUrl)
+.then(r => r.json())
+.then(json => {
+    data = json;
+    data.forEach(item => {
+        Object.keys(item).forEach(k => {
+            if (k !== 'source' && k !== 'file') rubriques.add(k);
+        });
+    });
+
+    const c = document.getElementById('rubriques-container');
+    rubriques.forEach(r => {
+        const d = document.createElement('div');
+        d.className = 'rubrique-checkbox';
+        d.innerHTML =
+            `<input type="checkbox" class="rubrique-check" id="rubrique-${r}" checked>
+             <label for="rubrique-${r}">${r}</label>`;
+        c.appendChild(d);
+    });
+});
+
+
+function getSelectedRubriques() {
+    return [...rubriques].filter(r =>
+        document.getElementById(`rubrique-${r}`)?.checked
+    );
+}
+
+function checkAllRubriques() {
+    document.querySelectorAll('.rubrique-check').forEach(cb => cb.checked = true);
+}
+
+function uncheckAllRubriques() {
+    document.querySelectorAll('.rubrique-check').forEach(cb => cb.checked = false);
+}
+
+function parseQuery(raw) {
+    const q = raw.trim();
+    if (!q) return { exact: '', terms: [] };
+
+    const exact = q.match(/^"(.*)"$/);
+    if (exact) return { exact: exact[1].toLowerCase(), terms: [] };
+
+    return {
+        exact: '',
+        terms: q.toLowerCase().split(/\s+/).map(t => {
+            const c = t.replace(/\*/g,'');
+            let r;
+            if (t.startsWith('*') && t.endsWith('*')) r = new RegExp(c,'i');
+            else if (t.startsWith('*')) r = new RegExp(c+'\\b','i');
+            else if (t.endsWith('*')) r = new RegExp('\\b'+c,'i');
+            else r = new RegExp(c,'i');
+            return r;
+        })
+    };
+}
+
+function performSearch() {
+    const { exact, terms } = parseQuery(searchInput.value);
+    const selected = getSelectedRubriques();
+
+    const srcCol = document.getElementById('sources-column');
+    const recCol = document.getElementById('records-column');
+    const resultsCount = document.getElementById('results-count');
+
+    srcCol.innerHTML = '';
+    recCol.innerHTML = '';
+
+    const results = data.filter(item =>
+        Object.entries(item).some(([k,v]) => {
+            if (k === 'source' || k === 'file') return false;
+            if (selected.length && !selected.includes(k)) return false;
+            const t = String(v).toLowerCase();
+            if (exact) return t.includes(exact);
+            if (terms.length) return terms.every(r => r.test(t));
+            return true;
+        })
+    );
+
+    resultsCount.textContent = `${results.length} record(s) found`;
+
+    results.forEach((item,i) => {
+        // Sources column
+        const src = document.createElement('div');
+        src.className = 'source-item';
+        src.textContent = item.source;
+        src.onclick = () => document.getElementById(`rec-${i}`).scrollIntoView({behavior:'smooth'});
+        srcCol.appendChild(src);
+
+        // Records column
+        const d = document.createElement('div');
+        d.className = 'result';
+        d.id = `rec-${i}`;
+
+        const title = document.createElement('div');
+        title.className = 'source';
+        title.textContent = item.source;
+        title.onclick = () => openSource(item);
+        d.appendChild(title);
+
+        Object.keys(item).forEach(f => {
+            if (f !== 'source') {
+                const line = document.createElement('div');
+                line.innerHTML =
+                    `<strong>${f} :</strong> ` + highlight(String(item[f]).replace(/\n/g,'<br>'), exact, terms);
+                d.appendChild(line);
+            }
+        });
+
+        recCol.appendChild(d);
+    });
+
+    // Footer at the bottom of results
+    const footerDiv = document.createElement('div');
+    footerDiv.className = 'result-footer';
+    const d = new Date();
+    footerDiv.textContent = `Biographical Dictionary. Online search results as of ${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`;
+    recCol.appendChild(footerDiv);
+}
+
+function highlight(text, exact, terms) {
+    let r = text;
+    if (exact) {
+        return r.replace(new RegExp(exact,'gi'), m => `<span class="match">${m}</span>`);
+    }
+    terms.forEach(t => r = r.replace(t, m => `<span class="match">${m}</span>`));
+    return r;
+}
+
+function openSource(item) {
+    const w = window.open('', '_blank');
+    w.document.write(`<pre>${JSON.stringify(item,null,2)}</pre>`);
+    w.document.close();
+}
+
+searchInput.addEventListener('keydown', function(event) {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        performSearch();
+    }
+});
+
+window.addEventListener('scroll', () => {
+    backToTop.style.display = window.scrollY > 300 ? 'block' : 'none';
+});
+backToTop.onclick = () => window.scrollTo({top:0, behavior:'smooth'});
+</script>
+
+</body>
+</html>
