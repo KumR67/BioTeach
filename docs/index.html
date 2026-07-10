@@ -102,6 +102,11 @@ function parseQuery(raw) {
 }
 
 function performSearch() {
+    const query = searchInput.value.trim();
+    if (query.length < 3) {
+        alert("Veuillez saisir au moins 3 caractères pour effectuer une recherche.");
+        return; // Arrête la fonction si la condition n'est pas remplie
+        }
     const { exact, terms } = parseQuery(searchInput.value);
     const selected = getSelectedRubriques();
 
@@ -181,8 +186,14 @@ function openSource(item) {
 
 searchInput.addEventListener('keydown', function(event) {
     if (event.key === 'Enter') {
-        event.preventDefault();
-        performSearch();
+        const query = searchInput.value.trim();
+        if (query.length >= 3) {
+            event.preventDefault();
+            performSearch();
+        } else {
+            event.preventDefault();
+            alert("Veuillez saisir au moins 3 caractères pour effectuer une recherche.");
+        }
     }
 });
 
